@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#f4f5f7">
+<title>Mando SPIKE</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --pad: #ffffff; --ring: #e3e6ea; --line: #eceef1; --text: #2b2f36; --muted: #8a919c;
+    --accent: #ffcf00; --ok: #2fbf6c; --bad: #ef4b4b; --thumb: #23262b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111418; --pad: #1b2027; --ring: #2a313b; --line: #252b33; --text: #eef1f5; --muted: #8b96a5; --thumb: #f0f2f5; }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; touch-action: none; overscroll-behavior: none; }
+  body { display: flex; flex-direction: column; padding: max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+
+  /* Barra superior */
+  .bar { display: flex; align-items: center; gap: 8px; flex: none; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--pad); border: 1px solid var(--ring);
+    border-radius: 999px; padding: 8px 14px; font-size: 14px; font-weight: 600; color: var(--text); cursor: pointer; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
+  .dot.on { background: var(--ok); } .dot.busy { background: var(--accent); }
+  #status { flex: 1; text-align: center; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #stopAll { background: var(--bad); color: #fff; border-color: var(--bad); }
+
+  /* Zona de mandos */
+  .stage { flex: 1; display: flex; align-items: center; justify-content: space-evenly; gap: 16px; min-height: 0; }
+  .pad { position: relative; border-radius: 50%; background: var(--pad); border: 2px solid var(--ring);
+    width: min(calc(100dvh - 90px), 46vw, 360px); aspect-ratio: 1; flex: none; touch-action: none; overflow: hidden; }
+  .pad::before, .pad::after { content: ""; position: absolute; left: 50%; top: 50%; width: 141%; height: 1.5px;
+    background: var(--line); transform-origin: center; }
+  .pad::before { transform: translate(-50%, -50%) rotate(45deg); }
+  .pad::after  { transform: translate(-50%, -50%) rotate(-45deg); }
+  .lbl { position: absolute; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 4px; flex-direction: column; z-index: 1; pointer-events: none; }
+  .lbl.t { top: 9%; left: 50%; transform: translateX(-50%); }
+  .lbl.b { bottom: 9%; left: 50%; transform: translateX(-50%); flex-direction: column-reverse; }
+  .lbl.l { left: 7%; top: 50%; transform: translateY(-50%); flex-direction: row; }
+  .lbl.r { right: 7%; top: 50%; transform: translateY(-50%); flex-direction: row-reverse; }
+  .knob { position: absolute; left: 50%; top: 50%; width: 26%; aspect-ratio: 1; border-radius: 50%;
+    background: var(--thumb); box-shadow: 0 0 0 4px var(--pad), 0 0 0 6px var(--thumb), 0 6px 14px rgba(0,0,0,.25);
+    transform: translate(-50%, -50%); z-index: 2; pointer-events: none; }
+  .pad.active .knob { transition: none; }
+  .pad:not(.active) .knob { transition: transform .15s ease-out; }
+
+  .side { display: flex; flex-direction: column; align-items: center; gap: 10px; flex: none; }
+  .pill { width: 76px; height: min(calc(100dvh - 140px), 280px); border-radius: 40px; background: var(--pad); border: 2px solid var(--ring);
+    display: flex; flex-direction: column; overflow: hidden; touch-action: none; }
+  .pill button { flex: 1; border: 0; background: transparent; color: var(--muted); font-size: 22px; cursor: pointer; touch-action: none; }
+  .pill button.held { background: var(--accent); color: #111; }
+  .pill .mid { font-size: 13px; color: var(--muted); text-align: center; padding: 6px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .readout { font-size: 12px; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; min-height: 32px; line-height: 1.35; }
+
+  /* Ajustes */
+  #settings { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 10; padding: 16px; }
+  #settings.open { display: flex; }
+  .sheet { background: var(--pad); color: var(--text); border-radius: 18px; padding: 18px; width: min(440px, 100%); max-height: 100%; overflow: auto; touch-action: pan-y; }
+  .sheet h2 { margin: 0 0 12px; font-size: 18px; }
+  .f { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .f select, .f input[type=range] { font: inherit; }
+  .f select { background: var(--bg); color: var(--text); border: 1px solid var(--ring); border-radius: 8px; padding: 5px 8px; }
+  .f input[type=range] { width: 150px; touch-action: pan-x; }
+  .f input[type=checkbox] { width: 22px; height: 22px; }
+  .sheet .close { margin-top: 14px; width: 100%; padding: 12px; border: 0; border-radius: 12px; background: var(--accent); color: #111; font-weight: 700; font-size: 15px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.4; }
+  #log { white-space: pre-wrap; font-family: ui-monospace, Menlo, monospace; font-size: 11px; max-height: 130px; overflow: auto; color: var(--muted); margin-top: 8px; -webkit-user-select: text; user-select: text; }
+
+  #warn { position: fixed; left: 16px; right: 16px; bottom: 16px; background: #3a2a10; color: #ffd98a; border-radius: 12px; padding: 12px; font-size: 14px; display: none; z-index: 5; line-height: 1.4; }
+
+  /* Vertical: aviso para girar */
+  @media (orientation: portrait) {
+    .stage { flex-direction: column; justify-content: center; gap: 22px; }
+    .pad { width: min(84vw, 340px); }
+    .side { flex-direction: row; }
+    .pill { width: 220px; height: 74px; flex-direction: row-reverse; }
+    .pill .mid { border: 0; border-left: 1px solid var(--line); border-right: 1px solid var(--line); padding: 0 8px; display: flex; align-items: center; }
+  }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <button class="chip" id="btnConnect"><span class="dot" id="dot"></span><span id="connText">Conectar</span></button>
+    <div id="status">Desconectado</div>
+    <span class="chip" id="battery" style="display:none"></span>
+    <button class="chip" id="stopAll">■ STOP</button>
+    <button class="chip" id="btnSettings">⚙︎</button>
+  </div>
+
+  <div class="stage">
+    <div class="pad" id="drive">
+      <div class="lbl t">▲<span>Adelante</span></div>
+      <div class="lbl b">▼<span>Atrás</span></div>
+      <div class="lbl l">◀<span>Izq.</span></div>
+      <div class="lbl r">▶<span>Der.</span></div>
+      <div class="knob" id="knob"></div>
+    </div>
+
+    <div class="side">
+      <div class="pill" id="armPill">
+        <button id="armUp" aria-label="Subir brazo">▲</button>
+        <div class="mid">Brazo</div>
+        <button id="armDown" aria-label="Bajar brazo">▼</button>
+      </div>
+      <div class="readout" id="readout">E 0% · A 0%<br>Brazo —</div>
+    </div>
+  </div>
+
+  <div id="warn"></div>
+
+  <div id="settings">
+    <div class="sheet">
+      <h2>Ajustes</h2>
+      <div class="f"><span>Motor izquierdo</span><select id="portLeft"></select></div>
+      <div class="f"><span>Motor derecho</span><select id="portRight"></select></div>
+      <div class="f"><span>Motor del brazo</span><select id="portArm"></select></div>
+      <div class="f"><span>Invertir motor izquierdo</span><input type="checkbox" id="invLeft" checked></div>
+      <div class="f"><span>Invertir motor derecho</span><input type="checkbox" id="invRight"></div>
+      <div class="f"><span>Invertir brazo</span><input type="checkbox" id="invArm"></div>
+      <div class="f"><span>Velocidad máx. ruedas <b id="vDrive">70%</b></span><input type="range" id="maxDrive" min="20" max="100" step="10" value="70"></div>
+      <div class="f"><span>Velocidad brazo <b id="vArm">40%</b></span><input type="range" id="maxArm" min="10" max="100" step="10" value="40"></div>
+      <div class="f"><span>Ranura del hub que se usa</span><select id="optSlot"></select></div>
+      <div class="hint">Si al empujar “Adelante” el robot gira sobre sí mismo o va hacia atrás, activa o desactiva “Invertir” en el motor que gira al revés. “Automático” en el brazo usa el primer motor conectado que no sea de las ruedas.</div>
+      <details><summary class="hint">Registro técnico</summary><div id="log"></div></details>
+      <button class="close" id="closeSettings">Listo</button>
+    </div>
+  </div>
+
+<script>
+/* PROTOCOL_START */
+const SERVICE = "0000fd02-0000-1000-8000-00805f9b34fb";
+const RX_CHAR = "0000fd02-0001-1000-8000-00805f9b34fb"; // escribir al hub
+const TX_CHAR = "0000fd02-0002-1000-8000-00805f9b34fb"; // notificaciones del hub
+
+// COBS con variante LEGO (delimitadores 0x00,0x01,0x02; bloque max 84; XOR 0x03; fin 0x02)
+function cobsEncode(data) {
+  const out = [];
+  let codeIndex = 0, block = 0;
+  const begin = () => { codeIndex = out.length; out.push(0xFF); block = 1; };
+  begin();
+  for (const b of data) {
+    if (b > 2) { out.push(b); block++; }
+    if (b <= 2 || block > 84) {
+      if (b <= 2) out[codeIndex] = b * 84 + block + 2;
+      begin();
+    }
+  }
+  out[codeIndex] = block + 2;
+  return out;
+}
+function cobsDecode(data) {
+  const out = [];
+  const unescape = (code) => {
+    if (code === 0xFF) return [null, 85];
+    let v = Math.floor((code - 2) / 84), blk = (code - 2) % 84;
+    if (blk === 0) { blk = 84; v -= 1; }
+    return [v, blk];
+  };
+  let [value, block] = unescape(data[0]);
+  for (let i = 1; i < data.length; i++) {
+    block--;
+    if (block > 0) { out.push(data[i]); continue; }
+    if (value !== null) out.push(value);
+    [value, block] = unescape(data[i]);
+  }
+  return out;
+}
+function pack(payload) {
+  const enc = cobsEncode(payload).map(b => b ^ 3);
+  enc.push(0x02);
+  return new Uint8Array(enc);
+}
+function unpack(frame) {
+  let start = 0;
+  if (frame[0] === 0x01) start = 1;
+  const body = Array.from(frame.slice(start, frame.length - 1)).map(b => b ^ 3);
+  return new Uint8Array(cobsDecode(body));
+}
+
+// CRC32 igual a zlib.crc32 con semilla y relleno a múltiplo de 4
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(bytes, seed = 0) {
+  const pad = (4 - (bytes.length % 4)) % 4;
+  let c = (seed ^ 0xFFFFFFFF) >>> 0;
+  const step = (b) => { c = CRC_TABLE[(c ^ b) & 0xFF] ^ (c >>> 8); };
+  for (const b of bytes) step(b);
+  for (let i = 0; i < pad; i++) step(0);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+// Constructores de mensajes (little-endian)
+const u16 = v => [v & 0xFF, (v >> 8) & 0xFF];
+const u32 = v => [v & 0xFF, (v >>> 8) & 0xFF, (v >>> 16) & 0xFF, (v >>> 24) & 0xFF];
+const MSG = {
+  info: () => [0x00],
+  deviceNotif: ms => [0x28, ...u16(ms)],
+  clearSlot: slot => [0x46, slot],
+  startUpload: (name, slot, crc) => [0x0C, ...new TextEncoder().encode(name), 0, slot, ...u32(crc)],
+  chunk: (runningCrc, payload) => [0x10, ...u32(runningCrc), ...u16(payload.length), ...payload],
+  programFlow: (stop, slot) => [0x1E, stop ? 1 : 0, slot],
+};
+/* PROTOCOL_END */
+
+/* ================= CONFIGURACIÓN ================= */
+const PORTS = ["A", "B", "C", "D", "E", "F"];
+const MOTOR_TYPES = { 0x30: ["mediano", 1110], 0x31: ["grande", 1050], 0x41: ["pequeño", 660] };
+const $ = id => document.getElementById(id);
+
+const cfg = { portLeft: "E", portRight: "A", portArm: "auto", invLeft: true, invRight: false, invArm: false, maxDrive: 70, maxArm: 40, slot: 19 };
+try { Object.assign(cfg, JSON.parse(localStorage.getItem("spikeMando") || "{}")); } catch (e) {}
+const saveCfg = () => { try { localStorage.setItem("spikeMando", JSON.stringify(cfg)); } catch (e) {} };
+
+function fillSelect(sel, opts, value) {
+  for (const [v, t] of opts) { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); }
+  sel.value = value;
+}
+const portOpts = PORTS.map(p => [p, "Puerto " + p]);
+fillSelect($("portLeft"), portOpts, cfg.portLeft);
+fillSelect($("portRight"), portOpts, cfg.portRight);
+fillSelect($("portArm"), [["auto", "Automático"], ...portOpts], cfg.portArm);
+fillSelect($("optSlot"), Array.from({ length: 20 }, (_, i) => [i, String(i)]), cfg.slot);
+for (const k of ["invLeft", "invRight", "invArm"]) $(k).checked = cfg[k];
+$("maxDrive").value = cfg.maxDrive; $("maxArm").value = cfg.maxArm;
+const showVals = () => { $("vDrive").textContent = cfg.maxDrive + "%"; $("vArm").textContent = cfg.maxArm + "%"; };
+showVals();
+for (const k of ["portLeft", "portRight", "portArm", "optSlot"]) $(k).addEventListener("change", e => { cfg[k === "optSlot" ? "slot" : k] = k === "optSlot" ? +e.target.value : e.target.value; saveCfg(); recompute(); });
+for (const k of ["invLeft", "invRight", "invArm"]) $(k).addEventListener("change", e => { cfg[k] = e.target.checked; saveCfg(); recompute(); });
+for (const k of ["maxDrive", "maxArm"]) $(k).addEventListener("input", e => { cfg[k] = +e.target.value; showVals(); saveCfg(); recompute(); });
+$("btnSettings").addEventListener("click", () => $("settings").classList.add("open"));
+$("closeSettings").addEventListener("click", () => $("settings").classList.remove("open"));
+
+/* ================= ESTADO ================= */
+const state = {
+  device: null, rx: null, info: null, rxBuf: [], pending: new Map(),
+  target: { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 },   // -100..100 por puerto
+  motors: {}, sentKey: null, sending: false,
+  joy: { x: 0, y: 0 }, arm: 0,                       // arm: -1, 0, 1
+};
+
+function log(msg) {
+  const el = $("log");
+  el.textContent = (new Date().toLocaleTimeString() + "  " + msg + "\n" + el.textContent).slice(0, 6000);
+}
+function setStatus(text, mode) { $("status").textContent = text; $("dot").className = "dot" + (mode ? " " + mode : ""); }
+
+function armPort() {
+  if (cfg.portArm !== "auto") return cfg.portArm;
+  return PORTS.find(p => state.motors[p] && p !== cfg.portLeft && p !== cfg.portRight) || null;
+}
+
+/* Mezcla tipo tanque: Y = avanzar, X = girar */
+function recompute() {
+  const q = v => Math.round(v / 10) * 10;          // pasos de 10% para no saturar el hub
+  const { x, y } = state.joy;
+  let l = y + x, r = y - x;
+  const m = Math.max(1, Math.abs(l), Math.abs(r));
+  l = q(l / m * cfg.maxDrive); r = q(r / m * cfg.maxDrive);
+  const t = { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 };
+  t[cfg.portLeft] = cfg.invLeft ? -l : l;
+  t[cfg.portRight] = cfg.invRight ? -r : r;
+  const ap = armPort();
+  if (ap && ap !== cfg.portLeft && ap !== cfg.portRight) t[ap] = state.arm * cfg.maxArm * (cfg.invArm ? -1 : 1);
+  state.target = t;
+  $("readout").innerHTML = `Izq ${cfg.portLeft} ${l}% · Der ${cfg.portRight} ${r}%<br>Brazo ${ap ? ap + (state.arm ? (state.arm > 0 ? " ▲" : " ▼") : " ·") : "sin motor"}`;
+  scheduleSend();
+}
+
+/* ================= JOYSTICK ================= */
+(() => {
+  const pad = $("drive"), knob = $("knob");
+  let pid = null;
+  const move = e => {
+    const r = pad.getBoundingClientRect();
+    const R = r.width / 2 * 0.74;
+    let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+    const d = Math.hypot(dx, dy);
+    if (d > R) { dx *= R / d; dy *= R / d; }
+    knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    let x = dx / R, y = -dy / R;
+    if (Math.abs(x) < 0.12) x = 0;                 // zona muerta
+    if (Math.abs(y) < 0.12) y = 0;
+    state.joy = { x, y }; recompute();
+  };
+  const end = e => {
+    if (e.pointerId !== pid) return;
+    pid = null; pad.classList.remove("active");
+    knob.style.transform = "translate(-50%, -50%)";
+    state.joy = { x: 0, y: 0 }; recompute();
+  };
+  pad.addEventListener("pointerdown", e => { pid = e.pointerId; pad.setPointerCapture(pid); pad.classList.add("active"); move(e); e.preventDefault(); });
+  pad.addEventListener("pointermove", e => { if (e.pointerId === pid) move(e); });
+  pad.addEventListener("pointerup", end);
+  pad.addEventListener("pointercancel", end);
+})();
+
+/* ================= BRAZO (mantener pulsado) ================= */
+for (const [id, dir] of [["armUp", 1], ["armDown", -1]]) {
+  const b = $(id);
+  const on = e => { b.setPointerCapture(e.pointerId); b.classList.add("held"); state.arm = dir; recompute(); e.preventDefault(); };
+  const off = () => { if (!b.classList.contains("held")) return; b.classList.remove("held"); if (state.arm === dir) { state.arm = 0; recompute(); } };
+  b.addEventListener("pointerdown", on);
+  b.addEventListener("pointerup", off);
+  b.addEventListener("pointercancel", off);
+  b.addEventListener("lostpointercapture", off);
+  b.addEventListener("contextmenu", e => e.preventDefault());
+}
+
+$("stopAll").addEventListener("click", stopAll);
+$("btnConnect").addEventListener("click", () => state.device?.gatt?.connected ? disconnect() : connect());
+
+if (!navigator.bluetooth) {
+  const w = $("warn"); w.style.display = "block";
+  w.onclick = () => w.style.display = "none";
+  w.innerHTML = /iPhone|iPad|iPod/.test(navigator.userAgent)
+    ? "<b>En iPhone abre esta página dentro de la app gratuita Bluefy</b> (Safari y Chrome no permiten Bluetooth web)."
+    : "Este navegador no soporta Bluetooth web. Usa Chrome (Android/PC) o Bluefy (iPhone), con https://.";
+}
+
+/* ================= BLUETOOTH ================= */
+async function connect() {
+  try {
+    setStatus("Buscando hub…", "busy");
+    const device = await navigator.bluetooth.requestDevice({ filters: [{ services: [SERVICE] }], optionalServices: [SERVICE] });
+    state.device = device;
+    device.addEventListener("gattserverdisconnected", onDisconnected);
+    setStatus("Conectando…", "busy");
+    const server = await device.gatt.connect();
+    const svc = await server.getPrimaryService(SERVICE);
+    state.rx = await svc.getCharacteristic(RX_CHAR);
+    const tx = await svc.getCharacteristic(TX_CHAR);
+    tx.addEventListener("characteristicvaluechanged", e => onData(new Uint8Array(e.target.value.buffer)));
+    await tx.startNotifications();
+    const info = await request(MSG.info(), 0x01);
+    const dv = new DataView(info.buffer);
+    state.info = { fw: `${info[5]}.${info[6]}.${dv.getUint16(7, true)}`, maxPacket: dv.getUint16(9, true), maxChunk: dv.getUint16(13, true) };
+    log("Info: " + JSON.stringify(state.info));
+    await request(MSG.deviceNotif(300), 0x29);
+    $("connText").textContent = device.name || "Hub";
+    setStatus("¡Conectado!", "on");
+    state.sentKey = null; scheduleSend();
+  } catch (err) {
+    log("Error de conexión: " + err);
+    setStatus(err.name === "NotFoundError" ? "No se eligió hub" : "Error: " + err.message, "");
+  }
+}
+function disconnect() { stopAll().finally(() => state.device?.gatt?.disconnect()); }
+function onDisconnected() {
+  setStatus("Desconectado", ""); $("connText").textContent = "Conectar"; $("battery").style.display = "none";
+  for (const { reject, timer } of state.pending.values()) { clearTimeout(timer); reject(new Error("desconectado")); }
+  state.pending.clear(); state.sending = false; state.motors = {};
+}
+async function writeRaw(bytes) {
+  const size = state.info ? state.info.maxPacket : bytes.length;
+  for (let i = 0; i < bytes.length; i += size) {
+    const part = bytes.slice(i, i + size);
+    if (state.rx.writeValueWithoutResponse) await state.rx.writeValueWithoutResponse(part);
+    else await state.rx.writeValue(part);
+  }
+}
+function request(payload, responseId, timeout = 4000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { state.pending.delete(responseId); reject(new Error("sin respuesta 0x" + responseId.toString(16))); }, timeout);
+    state.pending.set(responseId, { resolve, reject, timer });
+    writeRaw(pack(payload)).catch(e => { clearTimeout(timer); state.pending.delete(responseId); reject(e); });
+  });
+}
+function onData(chunk) {
+  for (const b of chunk) {
+    if (b === 0x02) {
+      if (state.rxBuf.length) { try { handleMessage(unpack(new Uint8Array([...state.rxBuf, 0x02]))); } catch (e) { log("Trama inválida: " + e); } }
+      state.rxBuf = [];
+    } else state.rxBuf.push(b);
+  }
+}
+function handleMessage(m) {
+  const p = state.pending.get(m[0]);
+  if (p) { clearTimeout(p.timer); state.pending.delete(m[0]); p.resolve(m); }
+  if (m[0] === 0x3C) parseDevices(m);
+  else if (m[0] === 0x21) log("Hub: " + new TextDecoder().decode(m.slice(1)).replace(/\0.*$/s, ""));
+}
+function parseDevices(m) {
+  const dv = new DataView(m.buffer, m.byteOffset);
+  const size = dv.getUint16(1, true);
+  const sizes = { 0x00: 2, 0x01: 21, 0x02: 26, 0x0A: 12, 0x0B: 4, 0x0C: 9, 0x0D: 4, 0x0E: 11 };
+  const motors = {};
+  let i = 3;
+  while (i < 3 + size && i < m.length && m[i] in sizes) {
+    const t = m[i];
+    if (t === 0x00) { $("battery").style.display = ""; $("battery").textContent = "🔋 " + m[i + 1] + "%"; }
+    if (t === 0x0A && PORTS[m[i + 1]]) motors[PORTS[m[i + 1]]] = { type: m[i + 2], pos: dv.getInt32(i + 8, true) };
+    i += sizes[t];
+  }
+  const changed = Object.keys(motors).join() !== Object.keys(state.motors).join();
+  state.motors = motors;
+  if (changed) { log("Motores detectados: " + (Object.keys(motors).join(", ") || "ninguno")); recompute(); }
+}
+
+/* ================= ENVÍO ================= */
+// El firmware oficial de LEGO no acepta órdenes sueltas a motores: cada cambio genera
+// un mini-programa Python que se sube a una ranura y se ejecuta. Solo se envía el estado más reciente.
+function buildProgram() {
+  const lines = ["import motor, runloop", "from hub import port"];
+  for (const p of PORTS) {
+    const pct = state.target[p];
+    const max = (MOTOR_TYPES[state.motors[p]?.type] || [0, 1000])[1];
+    const cmd = pct === 0 ? `motor.stop(port.${p})` : `motor.run(port.${p}, ${Math.round(pct * max / 100)})`;
+    lines.push(`try:\n    ${cmd}\nexcept Exception:\n    pass`);
+  }
+  lines.push("async def main():", "    while True:", "        await runloop.sleep_ms(1000)", "runloop.run(main())");
+  return new TextEncoder().encode(lines.join("\n"));
+}
+let sendTimer = null;
+function scheduleSend() { clearTimeout(sendTimer); sendTimer = setTimeout(pump, 30); }
+async function pump() {
+  if (state.sending || !state.device?.gatt?.connected || !state.info) return;
+  const key = JSON.stringify(state.target);
+  if (key === state.sentKey) return;
+  state.sending = true;
+  const t0 = performance.now();
+  try {
+    await uploadAndRun(buildProgram());
+    state.sentKey = key;
+    setStatus(`¡Conectado! · ${Math.round(performance.now() - t0)} ms`, "on");
+  } catch (e) {
+    log("Error al enviar: " + e.message); setStatus("Error: " + e.message, "busy");
+  } finally {
+    state.sending = false;
+    if (JSON.stringify(state.target) !== state.sentKey && state.device?.gatt?.connected) setTimeout(pump, 0);
+  }
+}
+async function uploadAndRun(program) {
+  const slot = cfg.slot;
+  await request(MSG.programFlow(true, slot), 0x1F).catch(() => {});
+  const up = await request(MSG.startUpload("program.py", slot, crc32(program)), 0x0D);
+  if (up[1] !== 0) throw new Error("el hub rechazó la subida");
+  const size = Math.max(4, state.info.maxChunk - (state.info.maxChunk % 4));
+  let running = 0;
+  for (let i = 0; i < program.length; i += size) {
+    const part = program.slice(i, i + size);
+    running = crc32(part, running);
+    const r = await request(MSG.chunk(running, Array.from(part)), 0x11);
+    if (r[1] !== 0) throw new Error("fallo al transferir");
+  }
+  const st = await request(MSG.programFlow(false, slot), 0x1F);
+  if (st[1] !== 0) throw new Error("el hub no inició el programa");
+}
+async function stopAll() {
+  state.joy = { x: 0, y: 0 }; state.arm = 0;
+  $("knob").style.transform = "translate(-50%, -50%)";
+  recompute();
+  if (state.device?.gatt?.connected && state.info) {
+    clearTimeout(sendTimer);
+    while (state.sending) await new Promise(r => setTimeout(r, 30));
+    await pump();
+  }
+}
+recompute();
+</script>
+</body>
+</html>
